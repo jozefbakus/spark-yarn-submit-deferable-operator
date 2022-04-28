@@ -5,4 +5,4 @@
 
 # What does plugin do ?
 spark_custom_submit_operator is a wrapper around the spark-submit binary to kick off a spark job in YARN.
-Once job is in yarn, operator defers and releases airflow worker space and leaves status checking of a job in Yarn on airflow trigger.
+Once job is in yarn, operator defers and releases airflow worker space and leaves status checking of a job in Yarn on airflow triggerer.

@@ -36,7 +36,7 @@ with DAG(
         application_args=["400"],
         verbose=True,
         spark_binary="/path/to/spark-submit",
-        resource_manager_url="http://domain:port/"
+        resource_manager_url="http://domain:port/",
         env_vars={'HADOOP_CONF_DIR': '/path/to/hadoop'}
     )
 

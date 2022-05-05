@@ -38,6 +38,7 @@ class SparkCustomSubmitOperator(BaseOperator):
         env_vars: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
         spark_binary: Optional[str] = None,
+        resource_manager_url: str,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -66,14 +67,16 @@ class SparkCustomSubmitOperator(BaseOperator):
         self._env_vars = env_vars
         self._verbose = verbose
         self._spark_binary = spark_binary
+        self._resource_manager_url = resource_manager_url
 
         self._submit_sp: Optional[Any] = None
         self._yarn_application_id: Optional[str] = None
         self._yarn_job_status: Optional[str] = None
         self._env: Optional[Dict[str, Any]] = None
+        self._yarn_api: YarnApi = YarnApi(self._resource_manager_url)
 
     def execute(self, context):
-        yarnResponse: YarnResponse = YarnApi.is_application_running_in_yarn_by_tag(self, self._appUniqueId)
+        yarnResponse: YarnResponse = self._yarn_api.is_application_running_in_yarn_by_tag(self, self._appUniqueId)
         self._yarn_application_id = yarnResponse.yarn_application_id
         self._yarn_job_status = yarnResponse.yarn_job_status
         if yarnResponse.is_running:
@@ -222,21 +225,23 @@ class SparkCustomSubmitOperator(BaseOperator):
             self._appUniqueId
         )
         self.defer(
-            trigger=SparkCustomSubmitTrigger(yarn_application_id=self._yarn_application_id, appUniqueId=self._appUniqueId),
+            trigger=SparkCustomSubmitTrigger(resource_manager_url=self._resource_manager_url, yarn_application_id=self._yarn_application_id, appUniqueId=self._appUniqueId),
             method_name="_afterDefer"
         )
 
 class SparkCustomSubmitTrigger(BaseTrigger):
-    def __init__(self, appUniqueId: str, yarn_application_id: Optional[str] = None):
+    def __init__(self, resource_manager_url: str, appUniqueId: str, yarn_application_id: Optional[str] = None):
         super().__init__()
         self._yarn_application_id = yarn_application_id
         self._appUniqueId = appUniqueId
         self._yarn_job_status = None
+        self._resource_manager_url = resource_manager_url
+        self._yarn_api: YarnApi = YarnApi(self._resource_manager_url)
 
     def serialize(self) -> Tuple[str, Dict[str, Any]]:
         return (
             "spark_custom_submit_operator.spark_custom_submit_operator.SparkCustomSubmitTrigger",
-            {"yarn_application_id": self._yarn_application_id, "appUniqueId": self._appUniqueId}
+            {"resource_manager_url": self._resource_manager_url, "yarn_application_id": self._yarn_application_id, "appUniqueId": self._appUniqueId}
         )
 
     async def run(self):
@@ -244,12 +249,12 @@ class SparkCustomSubmitTrigger(BaseTrigger):
             await asyncio.sleep(5)
             if not self._yarn_application_id:
                 self.log.info("Getting job status from YARN by application tag: %s", self._appUniqueId)
-                yarnResponse: YarnResponse = YarnApi.is_application_running_in_yarn_by_tag(self, self._appUniqueId)
+                yarnResponse: YarnResponse = self._yarn_api.is_application_running_in_yarn_by_tag(self, self._appUniqueId)
                 self._yarn_application_id = yarnResponse.yarn_application_id
                 self._yarn_job_status = yarnResponse.yarn_job_status
             else:
                 self.log.info("Getting job status from YARN by yarn application id: %s", self._yarn_application_id)
-                yarnResponse: YarnResponse = YarnApi.is_application_running_in_yarn_by_yarn_application_id(self, self._yarn_application_id)
+                yarnResponse: YarnResponse = self._yarn_api.is_application_running_in_yarn_by_yarn_application_id(self, self._yarn_application_id)
                 self._yarn_job_status = yarnResponse.yarn_job_status
 
             if self._yarn_job_status == "UNDEFINED":
@@ -290,10 +295,15 @@ class YarnResponse:
 
 class YarnApi():
     # YARN FINAL STATUS: UNDEFINED, SUCCEEDED, FAILED, KILLED
+    def __init__(
+        self,
+        resource_manager_url: str
+    ) -> None:
+        self._resource_manager_url = resource_manager_url
 
     @staticmethod
     def is_application_running_in_yarn_by_tag(self, appUniqueId: str) -> YarnResponse:
-        response = requests.get(f"http://localhost:8088/ws/v1/cluster/apps?applicationTags={appUniqueId}&finalStatus=UNDEFINED")
+        response = requests.get(f"{self._resource_manager_url}/ws/v1/cluster/apps?applicationTags={appUniqueId}&finalStatus=UNDEFINED")
         if response.status_code == 200:
             if 'app' in response.json()['apps']:
                 try:
@@ -309,7 +319,7 @@ class YarnApi():
 
     @staticmethod
     def is_application_running_in_yarn_by_yarn_application_id(self, yarn_application_id: str) -> YarnResponse:
-        response = requests.get(f"http://localhost:8088/ws/v1/cluster/apps/{yarn_application_id}")
+        response = requests.get(f"{self._resource_manager_url}/ws/v1/cluster/apps/{yarn_application_id}")
         if response.status_code == 200:
             try:
                 self._yarn_job_status = response.json()['app']['finalStatus']

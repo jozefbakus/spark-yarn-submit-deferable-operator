@@ -305,15 +305,14 @@ class YarnApi():
     def is_application_running_in_yarn_by_tag(self, appUniqueId: str) -> YarnResponse:
         response = requests.get(f"{self._resource_manager_url}/ws/v1/cluster/apps?applicationTags={appUniqueId}&finalStatus=UNDEFINED")
         if response.status_code == 200:
-            if 'app' in response.json()['apps']:
-                try:
-                    self._yarn_application_id = response.json()['apps']['app'][0]['id']
-                    self._yarn_job_status = response.json()['apps']['app'][0]['finalStatus']
-                except:
-                    raise AirflowException("Could not extract application id or application status from YARN response. Giving up.")
-                return YarnResponse(is_running = True, yarn_application_id = self._yarn_application_id, yarn_job_status = self._yarn_job_status)
-            else:
-                return YarnResponse(is_running = False, yarn_application_id = self._yarn_application_id, yarn_job_status = self._yarn_job_status)
+            try:
+                self._yarn_application_id = response.json()['apps']['app'][0]['id']
+                self._yarn_job_status = response.json()['apps']['app'][0]['finalStatus']
+                result = YarnResponse(is_running = True, yarn_application_id = self._yarn_application_id, yarn_job_status = self._yarn_job_status)
+            except:
+                result = YarnResponse(is_running = False, yarn_application_id = self._yarn_application_id, yarn_job_status = self._yarn_job_status)
+
+            return result
         else:
             raise AirflowException("Could not get status from YARN. Giving up.")
 
